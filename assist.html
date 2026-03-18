@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ナンプレ 一緒に解くモード</title>
+  <meta name="description" content="ナンプレの候補数字を自動計算して表示するサポートツール" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap" rel="stylesheet" />
+  <style>
+    /* ===== カラーパレット ===== */
+    :root {
+      --bg-main:    #1e1e2e;
+      --bg-surface: #181825;
+      --bg-block-a: #2e2e45;
+      --bg-block-b: #252538;
+      --fg-fixed:   #cdd6f4;
+      --fg-solved:  #a6e3a1;
+      --fg-anim:    #f9e2af;
+      --fg-error:   #f38ba8;
+      --accent-blue: #89b4fa;
+      --accent-green:#a6e3a1;
+      --accent-red:  #f38ba8;
+      --border-block:#45475a;
+      --border-cell: #313244;
+      --shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    /* ===== リセット & ベース ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-main);
+      color: var(--fg-fixed);
+      font-family: 'Nunito', sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 2rem 1rem 3rem;
+    }
+
+    /* ===== ナビゲーション ===== */
+    nav {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1rem;
+    }
+    nav a {
+      color: var(--accent-blue);
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+    nav a:hover {
+      color: var(--fg-fixed);
+    }
+
+    /* ===== タイトル ===== */
+    h1 {
+      font-size: clamp(1.4rem, 4.5vw, 2rem);
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.3rem;
+      background: linear-gradient(135deg, var(--accent-green), var(--accent-blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #6c7086;
+      margin-bottom: 1.8rem;
+    }
+
+    /* ===== グリッドカード ===== */
+    .card {
+      background: var(--bg-surface);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: clamp(12px, 3vw, 24px);
+      display: inline-block;
+    }
+
+    /* ===== 9x9 グリッド ===== */
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      grid-template-rows: repeat(9, 1fr);
+      gap: 0;
+      border: 3px solid var(--accent-green);
+      border-radius: 8px;
+      overflow: hidden;
+      width: min(90vw, 480px);
+      aspect-ratio: 1 / 1;
+    }
+
+    /* ===== セル ===== */
+    .cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-cell);
+      cursor: text;
+      transition: background 0.15s;
+      position: relative;
+    }
+
+    .cell[data-col="2"], .cell[data-col="5"] { border-right:  2.5px solid var(--border-block); }
+    .cell[data-row="2"], .cell[data-row="5"] { border-bottom: 2.5px solid var(--border-block); }
+
+    .cell.block-a { background: var(--bg-block-a); }
+    .cell.block-b { background: var(--bg-block-b); }
+    .cell:focus-within { background: #363655 !important; }
+
+    /* ===== セル内入力・表示 ===== */
+    .cell-input {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      text-align: center;
+      font-family: 'Nunito', sans-serif;
+      font-size: clamp(1rem, 3.5vw, 1.7rem);
+      font-weight: 700;
+      color: var(--fg-fixed);
+      cursor: text;
+      caret-color: var(--accent-green);
+      position: absolute;
+      top: 0; left: 0;
+      z-index: 2;
+    }
+
+    .candidates-display {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      align-items: center;
+      justify-items: center;
+      font-size: clamp(0.5rem, 1.5vw, 0.75rem);
+      color: var(--fg-anim);
+      pointer-events: none;
+      position: absolute;
+      top: 0; left: 0;
+      z-index: 1;
+      padding: 2px;
+      opacity: 0;
+    }
+
+    /* 候補表示状態のとき */
+    .cell.show-candidates .cell-input {
+      color: transparent;
+      background: transparent;
+      z-index: 1;
+    }
+    .cell.show-candidates .candidates-display {
+      opacity: 1;
+      z-index: 2;
+    }
+
+    /* エラーハイライト */
+    .cell-input.error {
+       color: var(--fg-error);
+    }
+
+    /* ===== ボタンエリア ===== */
+    .buttons {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.4rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4em;
+      padding: 0.6em 1.4em;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Nunito', sans-serif;
+      font-size: clamp(0.85rem, 2.5vw, 1rem);
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.1s, filter 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      color: var(--bg-main);
+    }
+    .btn:hover  { filter: brightness(1.15); transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
+    .btn:active { transform: translateY(0);  filter: brightness(0.95); }
+
+    .btn-calc  { background: var(--accent-green); }
+    .btn-clear { background: var(--accent-red); }
+
+    /* ===== フッター ===== */
+    footer {
+      margin-top: auto;
+      padding-top: 2.5rem;
+      font-size: 0.78rem;
+      color: #45475a;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a href="index.html">← 自動ソルバーに戻る</a>
+  </nav>
+
+  <h1>🤝 一緒に解くモード</h1>
+  <p class="subtitle">問題を入力して「候補を表示」を押すと、空きマスの候補数字が出ます</p>
+
+  <div class="card">
+    <div id="grid" role="grid"></div>
+
+    <div class="buttons">
+      <button id="btn-calc"  class="btn btn-calc" title="空きマスの候補を計算">💡 候補を表示</button>
+      <button id="btn-clear" class="btn btn-clear" title="クリア">🗑 クリア</button>
+    </div>
+  </div>
+
+  <footer>
+    <p>Made with ❤️ &nbsp;|&nbsp; ナンプレ サポートツール</p>
+  </footer>
+
+  <script>
+    "use strict";
+
+    const gridEl = document.getElementById("grid");
+    const cells = Array.from({ length: 9 }, () => Array(9).fill(null));
+
+    // セル生成
+    for (let row = 0; row < 9; row++) {
+      for (let col = 0; col < 9; col++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.row = row;
+        cell.dataset.col = col;
+
+        const blockRow = Math.floor(row / 3);
+        const blockCol = Math.floor(col / 3);
+        cell.classList.add((blockRow + blockCol) % 2 === 0 ? "block-a" : "block-b");
+
+        // 入力用要素
+        const inp = document.createElement("input");
+        inp.type = "text";
+        inp.inputMode = "numeric";
+        inp.maxLength = 1;
+        inp.className = "cell-input";
+        
+        // 候補表示用要素
+        const cand = document.createElement("div");
+        cand.className = "candidates-display";
+        for(let i=1; i<=9; i++) {
+          const span = document.createElement("span");
+          span.id = `cand-${row}-${col}-${i}`;
+          cand.appendChild(span);
+        }
+
+        inp.addEventListener("input", () => {
+          const v = inp.value.replace(/[^1-9]/g, "");
+          inp.value = v.slice(-1);
+          // 入力があったら候補表示を解除
+          cell.classList.remove("show-candidates");
+          inp.classList.remove("error");
+          clearCandidates(row, col);
+        });
+
+        inp.addEventListener("keydown", (e) => {
+          const moves = { ArrowUp:[-1,0], ArrowDown:[1,0], ArrowLeft:[0,-1], ArrowRight:[0,1] };
+          if (moves[e.key]) {
+            e.preventDefault();
+            const [dr, dc] = moves[e.key];
+            const nr = Math.min(8, Math.max(0, row + dr));
+            const nc = Math.min(8, Math.max(0, col + dc));
+            cells[nr][nc].inp.focus();
+          }
+        });
+
+        cand.addEventListener("click", () => {
+          inp.focus();
+        });
+
+        cell.appendChild(cand);
+        cell.appendChild(inp);
+        gridEl.appendChild(cell);
+        
+        cells[row][col] = { cell, inp, cand };
+      }
+    }
+
+    function clearCandidates(row, col) {
+      for(let i=1; i<=9; i++) {
+        document.getElementById(`cand-${row}-${col}-${i}`).textContent = "";
+      }
+    }
+
+    function getBoard() {
+      const board = [];
+      for (let r = 0; r < 9; r++) {
+        const rowData = [];
+        for (let c = 0; c < 9; c++) {
+          const v = cells[r][c].inp.value.trim();
+          rowData.push(v === "" ? 0 : parseInt(v, 10));
+        }
+        board.push(rowData);
+      }
+      return board;
+    }
+
+    // 重複チェック
+    function highlightErrors(board) {
+      let hasError = false;
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          cells[r][c].inp.classList.remove("error");
+        }
+      }
+
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const num = board[r][c];
+          if (num === 0) continue;
+          
+          let isErr = false;
+          // 行
+          for (let i = 0; i < 9; i++) {
+            if (i !== c && board[r][i] === num) isErr = true;
+          }
+          // 列
+          for (let i = 0; i < 9; i++) {
+            if (i !== r && board[i][c] === num) isErr = true;
+          }
+          // ブロック
+          const br = Math.floor(r / 3) * 3;
+          const bc = Math.floor(c / 3) * 3;
+          for (let i = br; i < br + 3; i++) {
+            for (let j = bc; j < bc + 3; j++) {
+              if ((i !== r || j !== c) && board[i][j] === num) isErr = true;
+            }
+          }
+
+          if (isErr) {
+            cells[r][c].inp.classList.add("error");
+            hasError = true;
+          }
+        }
+      }
+      return hasError;
+    }
+
+    function canPlace(board, row, col, num) {
+      for (let i = 0; i < 9; i++) {
+        if (board[row][i] === num) return false;
+        if (board[i][col] === num) return false;
+      }
+      const br = Math.floor(row / 3) * 3;
+      const bc = Math.floor(col / 3) * 3;
+      for (let i = br; i < br + 3; i++) {
+        for (let j = bc; j < bc + 3; j++) {
+          if (board[i][j] === num) return false;
+        }
+      }
+      return true;
+    }
+
+    document.getElementById("btn-calc").addEventListener("click", () => {
+      const board = getBoard();
+      
+      if (highlightErrors(board)) {
+        alert("盤面に重複（エラー）があります。修正してから候補を表示してください。");
+        return;
+      }
+
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const cellObj = cells[r][c];
+          clearCandidates(r, c);
+          
+          if (board[r][c] === 0) {
+            let hasCandidate = false;
+            for (let n = 1; n <= 9; n++) {
+              const span = document.getElementById(`cand-${r}-${c}-${n}`);
+              if (canPlace(board, r, c, n)) {
+                span.textContent = n;
+                hasCandidate = true;
+              } else {
+                span.textContent = "";
+              }
+            }
+            if (hasCandidate) {
+              cellObj.cell.classList.add("show-candidates");
+            }
+          } else {
+            cellObj.cell.classList.remove("show-candidates");
+          }
+        }
+      }
+    });
+
+    document.getElementById("btn-clear").addEventListener("click", () => {
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          cells[r][c].inp.value = "";
+          cells[r][c].inp.classList.remove("error");
+          cells[r][c].cell.classList.remove("show-candidates");
+          clearCandidates(r, c);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
