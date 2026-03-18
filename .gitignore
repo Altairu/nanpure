@@ -1,0 +1,20 @@
+# PyInstaller 生成物
+build/
+dist/
+*.spec
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 環境
+.env
+venv/
+.venv/
+
+# OS 生成ファイル
+.DS_Store
+Thumbs.db
+desktop.ini
