@@ -167,6 +167,14 @@
       z-index: 2;
     }
 
+    /* 確定候補（ユニークな候補）のハイライト */
+    .unique-candidate {
+      color: var(--accent-blue) !important;
+      font-weight: 900;
+      font-size: 1.3em;
+      text-shadow: 0 0 5px rgba(137, 180, 250, 0.4);
+    }
+
     /* エラーハイライト */
     .cell-input.error {
        color: var(--fg-error);
@@ -302,7 +310,9 @@
 
     function clearCandidates(row, col) {
       for(let i=1; i<=9; i++) {
-        document.getElementById(`cand-${row}-${col}-${i}`).textContent = "";
+        const span = document.getElementById(`cand-${row}-${col}-${i}`);
+        span.textContent = "";
+        span.classList.remove("unique-candidate");
       }
     }
 
@@ -383,6 +393,10 @@
         return;
       }
 
+      // 各マスの候補を保持する配列
+      const cands = Array.from({ length: 9 }, () => Array(9).fill(null).map(() => []));
+
+      // 候補の計算と表示
       for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
           const cellObj = cells[r][c];
@@ -393,6 +407,7 @@
             for (let n = 1; n <= 9; n++) {
               const span = document.getElementById(`cand-${r}-${c}-${n}`);
               if (canPlace(board, r, c, n)) {
+                cands[r][c].push(n);
                 span.textContent = n;
                 hasCandidate = true;
               } else {
@@ -404,6 +419,52 @@
             }
           } else {
             cellObj.cell.classList.remove("show-candidates");
+          }
+        }
+      }
+
+      // 確定候補（縦、横、ブロックで唯一、またはマス内で唯一）のハイライト
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          if (board[r][c] === 0) {
+            cands[r][c].forEach(n => {
+              let isUnique = false;
+
+              // 1. マス内で唯一 (Naked Single)
+              if (cands[r][c].length === 1) {
+                isUnique = true;
+              } else {
+                // 2. 行で唯一 (Hidden Single in Row)
+                let countInRow = 0;
+                for (let i = 0; i < 9; i++) {
+                  if (cands[r][i].includes(n)) countInRow++;
+                }
+                if (countInRow === 1) isUnique = true;
+
+                // 3. 列で唯一 (Hidden Single in Col)
+                let countInCol = 0;
+                for (let i = 0; i < 9; i++) {
+                  if (cands[i][c].includes(n)) countInCol++;
+                }
+                if (countInCol === 1) isUnique = true;
+
+                // 4. ブロックで唯一 (Hidden Single in Block)
+                let countInBlock = 0;
+                const br = Math.floor(r / 3) * 3;
+                const bc = Math.floor(c / 3) * 3;
+                for (let i = br; i < br + 3; i++) {
+                  for (let j = bc; j < bc + 3; j++) {
+                    if (cands[i][j].includes(n)) countInBlock++;
+                  }
+                }
+                if (countInBlock === 1) isUnique = true;
+              }
+
+              if (isUnique) {
+                const span = document.getElementById(`cand-${r}-${c}-${n}`);
+                span.classList.add("unique-candidate");
+              }
+            });
           }
         }
       }
